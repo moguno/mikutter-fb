@@ -7,7 +7,6 @@ require 'webrick'
 Plugin.create :mikutter_fb do
   # アクセストークンを得る
   def get_access_token(*permissions)
-
     key = ""
 
     # OAuthリダイレクト先のWebサーバを起動する
@@ -37,16 +36,15 @@ Plugin.create :mikutter_fb do
     access.exchange_access_token_info(access.get_access_token(key))["access_token"]
   end
 
+  # タブ
   tab :facebook, "Facebook" do
     set_icon "http://www.facebook.com/favicon.ico" 
     timeline :facebook
   end
 
-
   # 設定ウインドウ
   settings "Facebook" do
-    closeup attention = ::Gtk::Label.new("変更後は、#{Environment::NAME}を再起動した方がいいと思うよ！")
-    closeup decide = ::Gtk::Button.new('変更')
+    closeup decide = ::Gtk::Button.new('アカウント認証')
     attention.wrap = true
     decide.signal_connect("clicked") {
       token = get_access_token("read_stream")
@@ -61,6 +59,7 @@ Plugin.create :mikutter_fb do
     }
   end
 
+  # statusメッセージ
   def create_status_message(feed)
     msg = nil
 
@@ -71,6 +70,7 @@ Plugin.create :mikutter_fb do
     msg
   end
 
+  # photo,videoメッセージ
   def create_photo_message(feed)
     msg = ""
 
@@ -89,6 +89,7 @@ Plugin.create :mikutter_fb do
     end
   end
 
+  # linkメッセージ
   def create_link_message(feed)
     msg = ""
 
@@ -107,69 +108,60 @@ Plugin.create :mikutter_fb do
     end
   end
 
-    def main_loop()
-      timeline(:facebook).clear
+  # 一定周期でタイムラインを再描画する
+  def main_loop()
+    timeline(:facebook).clear
 
-      user = Hash.new
+    user = Hash.new
 
-      begin
-        api = Koala::Facebook::API.new(UserConfig[:mikutter_fb_access_token])
-        api.get_connection("me", "home", {:locale  =>  "ja_JP"}).each { |feed|
+    begin
+      api = Koala::Facebook::API.new(UserConfig[:mikutter_fb_access_token])
 
-          msg = case feed["type"]
-          when "status"
-            create_status_message(feed)
-          when "photo", "video"
-            create_photo_message(feed)
-          when "link"
-            create_photo_message(feed)
-          else
-            nil
-          end
+      api.get_connection("me", "home", {:locale  =>  "ja_JP"}).each { |feed|
+        msg = case feed["type"]
+        when "status"
+          create_status_message(feed)
+        when "photo", "video"
+          create_photo_message(feed)
+        when "link"
+          create_photo_message(feed)
+        else
+          nil
+        end
 
-          if !msg
-            next
-          end
+        if !msg
+          next
+        end
 
-puts "----------"
-feed.each { |k,v|
-  puts "#{k}: #{v}"
-}
+        message = Message.new(:id => feed[:id], :message => "#{msg}" , :system => true)
 
-          message = Message.new(:id => feed[:id], :message => "#{msg}" , :system => true)
+        if !user[feed["from"]["id"]]
+          user[feed["from"]["id"]] = api.get_object("#{feed["from"]["id"]}?fields=picture", {:locale  =>  "ja_JP"})["picture"]["data"]["url"]
+        end
 
-          if !user[feed["from"]["id"]]
-            user[feed["from"]["id"]] = api.get_object( "#{feed["from"]["id"]}?fields=picture", {:locale  =>  "ja_JP"})["picture"]["data"]["url"]
-            puts user[feed["from"]["id"]]
-          end
+        message[:user] = User.new(:id => -3939,
+                              :idname => "Facebook",
+                              :name => feed["from"]["name"],
+                              :profile_image_url => user[feed["from"]["id"]])
 
-          message[:user] = User.new(:id => -3939,
-                                :idname => "Facebook",
-                                :name => feed["from"]["name"],
-                                :profile_image_url => user[feed["from"]["id"]])
-
-          message[:system] = false
-	  message[:created] = Time.parse(feed["created_time"])
-	  message[:modified] = Time.parse(feed["updated_time"])
-
-puts "////////////"
-puts message[:created]
-puts "////////////"
-
-          timeline(:facebook) << message
-        }
-      rescue => e
-        message = Message.new(:message => "#{e}\n\nエラー。設定画面からアカウント認証をしてみよう" , :system => true)
+        message[:system] = false
+	message[:created] = Time.parse(feed["created_time"])
+	message[:modified] = Time.parse(feed["created_time"])
+#	message[:modified] = Time.parse(feed["updated_time"])
 
         timeline(:facebook) << message
-      end
-
-      Reserver.new(60 * 600) {
-        main_loop
       }
+    rescue => e
+      message = Message.new(:message => "#{e}\n\nエラー。設定画面からアカウント認証をしてみよう" , :system => true)
+      timeline(:facebook) << message
     end
 
-   on_boot do |service|
+    Reserver.new(60 * 600) {
+      main_loop
+    }
+  end
+
+  on_boot do |service|
     Reserver.new(0) {
       main_loop
     }
