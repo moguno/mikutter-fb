@@ -45,7 +45,6 @@ Plugin.create :mikutter_fb do
   # 設定ウインドウ
   settings "Facebook" do
     closeup decide = ::Gtk::Button.new('アカウント認証')
-    attention.wrap = true
     decide.signal_connect("clicked") {
       token = get_access_token("read_stream")
 
