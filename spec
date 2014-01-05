@@ -6,7 +6,7 @@ depends:
   - gtk
   - gui
   - settings
-version: 0.0.3
+version: 0.0.4
 author: moguno
 name: Facebook for mikutter
 description: とうとうmikutterはFacebookまでておくれさせてしまいましたとさ
