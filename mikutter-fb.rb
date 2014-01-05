@@ -58,6 +58,17 @@ Plugin.create :mikutter_fb do
     }
   end
 
+  # ユーザIDからプロフィール画像のURLを得る
+  @users = Hash.new
+
+  def get_user_image(api, id)
+    if !@users[id]
+      @users[id] = api.get_object("#{id}?fields=picture", {:locale  =>  "ja_JP"})["picture"]["data"]["url"]
+    end
+
+    @users[id]
+  end
+
   # statusメッセージ
   def create_status_message(feed)
     msg = nil
@@ -111,8 +122,6 @@ Plugin.create :mikutter_fb do
   def main_loop()
     timeline(:facebook).clear
 
-    user = Hash.new
-
     begin
       api = Koala::Facebook::API.new(UserConfig[:mikutter_fb_access_token])
 
@@ -132,30 +141,42 @@ Plugin.create :mikutter_fb do
           next
         end
 
-        message = Message.new(:id => feed[:id], :message => "#{msg}" , :system => true)
-
-        if !user[feed["from"]["id"]]
-          user[feed["from"]["id"]] = api.get_object("#{feed["from"]["id"]}?fields=picture", {:locale  =>  "ja_JP"})["picture"]["data"]["url"]
-        end
+        message = Message.new(:id => feed["id"], :message => "#{msg}" , :system => true)
 
         message[:user] = User.new(:id => -3939,
                               :idname => "Facebook",
                               :name => feed["from"]["name"],
-                              :profile_image_url => user[feed["from"]["id"]])
+                              :profile_image_url => get_user_image(api, feed["from"]["id"]))
 
         message[:system] = false
-	message[:created] = Time.parse(feed["created_time"])
+        message[:created] = Time.parse(feed["created_time"])
 	message[:modified] = Time.parse(feed["created_time"])
-#	message[:modified] = Time.parse(feed["updated_time"])
 
         timeline(:facebook) << message
+
+        # コメント処理
+        if feed["comments"]
+          Array(feed["comments"]["data"]).each { |comment|
+            message2 = Message.new(:id => comment["id"], :message => "#{comment["message"]} @_" , :system => true, :replyto => message, :receiver => message[:user])
+
+            message2[:system] = false
+            message2[:created] = Time.parse(feed["created_time"])
+
+            message2[:user] = User.new(:id => -3939,
+                                  :idname => "Facebook",
+                                  :name => comment["from"]["name"],
+                                  :profile_image_url => get_user_image(api, comment["from"]["id"]))
+
+            timeline(:facebook) << message2
+          }
+        end
       }
     rescue => e
       message = Message.new(:message => "#{e}\n\nエラー。設定画面からアカウント認証をしてみよう" , :system => true)
       timeline(:facebook) << message
     end
 
-    Reserver.new(60 * 600) {
+    Reserver.new(10 * 60) {
       main_loop
     }
   end
